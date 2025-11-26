@@ -22,7 +22,6 @@ KrenCtrl::KrenCtrl(){
   mTi = 0.2;
   mTe = 0.04; // инициализация времени интегратора
   mTmu = mTm;
-  //mTv *= 1.1; mTm *= 1.1; // mTf in (0.1 .. 2.0); mTv in (0.3 .. 1.5); mTm in (0.2 ... 4)
   setCtrlParam();
 }
 
