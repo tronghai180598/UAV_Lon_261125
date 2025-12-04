@@ -10,9 +10,11 @@
 #define LOG_DURATION 5
 #define LOG_SIZE LOG_DURATION * LOG_RATE
 
+extern KrenCtrl pdpiRoll;// = KrenCtrl();
+extern KrenCtrl pdpiPitch; // = KrenCtrl();
 Vector attitudeEuler;
 Vector attitudeTargetEuler;
-extern float roll_H;
+extern float roll_H, vz_kf_cm_s, z_kf_cm, baroAltRel_cm;
 extern float pitch_H;
 
 struct LogEntry {
@@ -42,7 +44,7 @@ int glog = 0; int lcntr;
 void logData() {
 	if(glog == 1){
 		if(!(lcntr > 0)){
-			print("%d %d %d\n", int(roll_H), int(gyro.x),  int(torqueTarget.x*1000) );		
+			print("%d %d %d %d %d\n", int(roll_H), int(pdpiRoll.mFi), int(gyro.x), int(pdpiRoll.mVi) ,int(torqueTarget.x*1000) );		
 			lcntr = 50;
 		}
 		lcntr--;
@@ -50,12 +52,20 @@ void logData() {
 	}
 	if(glog == 2){
 		if(!(lcntr > 0)){
-			print("%d %d %d\n", int(pitch_H), int(gyro.y),  int(torqueTarget.y*1000) );		
+			print("%d %d % d % d %d\n", int(pitch_H), int(pdpiPitch.mFi), int(gyro.y), int(pdpiPitch.mVi), int(torqueTarget.y*1000) );		
 			lcntr = 50;
 		}
 		lcntr--;
 		return;
 	}
+	if(glog == 3){
+	if(!(lcntr > 0)){
+		print("%d %d %d\n", int(vz_kf_cm_s), int(z_kf_cm), int(baroAltRel_cm));		
+		lcntr = 10;
+	}
+	lcntr--;
+	return;
+}
 	if (!armed) return;
 	static int logPointer = 0;
 	static Rate period(LOG_RATE);

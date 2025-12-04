@@ -27,7 +27,7 @@ _u_|___1____|_dv_|__1___|_V_|__1___|_Fi_
    |________|    |______|   |______|
 */
 float KrenMdl::updateMdl(float dt, float inp) {
-  saturate(inp, -1000,1000);
+  saturate(inp, -1000.0,1000.0);
   intert(dt, inp, 1, mTm, mPreAc);
   intert(dt, mPreAc, 1, dt, mAc);
   integr(dt, mAc, mTv, mVi);

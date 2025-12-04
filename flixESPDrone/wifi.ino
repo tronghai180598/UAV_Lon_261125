@@ -21,6 +21,9 @@ void setupWiFi() {
 	print("Setup Wi-Fi\n");
 	WiFi.softAP(WIFI_SSID, WIFI_PASSWORD);
 	udp.begin(WIFI_UDP_PORT);
+	IPAddress ip = WiFi.softAPIP();
+    Serial.print("AP IP: ");
+    Serial.println(ip);   // thường sẽ là 192.168.4.1
 }
 
 void sendWiFi(const uint8_t *buf, int len) {

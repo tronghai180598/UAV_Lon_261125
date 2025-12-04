@@ -20,7 +20,6 @@ Vector rates; // filtered angular rates, mrad/s
 Quaternion attitude; // estimated attitude
 bool landed; // are we landed and stationary
 float motors[4]; // normalized motors thrust in range [0..1]
-
 void setup() {
 	Serial.begin(SERIAL_BAUDRATE);
 	print("Initializing flix\n");
@@ -33,7 +32,7 @@ void setup() {
 	setupWiFi();
 #endif
 	setupIMU();
-	//setupRC();
+//	setupRC();
 	setLED(false);
 	print("Initializing complete\n");
 }
@@ -42,7 +41,7 @@ void loop() {
 	readIMU();
 	step();
 	//readRC();
-	//estimate();
+//	estimate();
 	control();
 	sendMotors();
 	handleInput();

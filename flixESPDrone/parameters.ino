@@ -34,6 +34,7 @@ Parameter parameters[] = {
   {"rKlmf", &pdpiRoll.klmf},
   {"rKlmv", &pdpiRoll.klmv},
 	{"RTI", &pdpiRoll.mTi},
+	{"RTmu", &pdpiRoll.mTmu},
 
 
 	{"PTV", &pdpiPitch.mTv},
@@ -46,6 +47,7 @@ Parameter parameters[] = {
   {"pKlmf", &pdpiPitch.klmf},
   {"pKlmv", &pdpiPitch.klmv},
 	{"PTI", &pdpiPitch.mTi},
+	{"PTmu", &pdpiPitch.mTmu},
 
 /*
 	{"ROLLRATE_P", &rollRatePID.p},

@@ -19,26 +19,41 @@ KrenCtrl::KrenCtrl(float Tf, float Tv, float Tm, float Tmi){
 KrenCtrl::KrenCtrl(){
   //mTmm = mTm; mTm = 0; 
   klmf = klmv = 0.1;
-  mTi = 0.2;
-  mTe = 0.04; // инициализация времени интегратора
-  mTmu = mTm;
+  mTi = 0.25;
+  mTe = 0.1;
+  mTmu = 0.05;
+  mTm = 0.05;
   setCtrlParam();
+}
+void KrenCtrl::reset()
+{
+    Us = 0.0f;
+    Uv = 0.0f;
+    Ui = 0.0f;
+    Um = 0.0f;
+    Umm = 0.0f;
+    erVi1 = 0.0f;
+    mdVi  = 0.0f;
+    muMd  = 0.0f;
+    uMold = 0.0f;
+    oUi   = 0.0f;
 }
 
 void KrenCtrl::setCtrlParam(){
 #if (__SelCtrl==_slCtrl_2PD)
   //mTmu = mTm; //sqrt(mTm*mTm + mTmm*mTmm);
-  mTi = 0.25;
-  mTe = 0.1;
-  mTmu = mTm;
-  Kpv = mTe*mTv/(55.0*mTmu*mTmu);
-  Kdv = mTe*mTv/(4.0*mTmu); // SO 4--5
-  Kpf = mTf / (10 * mTmu); // MO  15-30
+  // mTi = 0.25;
+  // mTe = 0.1;
+  // mTmu = 0.05;
+  // mTm = 0.05;
+  Kpv = mTe*mTv/(25.0*mTmu*mTmu);
+  Kdv = mTe*mTv/(2.0*mTmu); // SO 4--5
+  Kpf = mTf / (15 * mTmu); // MO  15-30
 /* -Fi       -Vi        Us
     |   ___   |   ___   |      ___    _______       _______ Ui Um 
 Fs--O--|Kpf|--O--|KpV|--O--O--|sat|--|1/(sTe)|--*--|1/(sTi)|--O-->u
        |___|Vs | |___|  |  |  |___|  |_______|  |Uv|_______|  |  
-              _|_____   |  \--------------------*-------------/  
+              _|_____   |  \--------------------*-------------/1  
              |s Kdv  |  |           
              |1+s Tmu|--/
              |_______|
@@ -102,16 +117,10 @@ void KrenCtrl::UdateKalman(float Fi, float Vi){
 }
 
 float KrenCtrl::updateCtrl(float dt, float setFi, float Fi, float Vi){
-  //float Tddmpf = mTmu * 10;
-  //rldiff(dt, Vi-mVold, Tddmpf, Tddmpf, mVid );  mVold = Vi;
   UdateKalman(Fi, Vi);  
-  //saturate(mVi, -32767,32767);  saturate(mFi, -3142,3142);
   float erFi = setFi - mFi;
   float erVi = Kpf * erFi  - mVi;
-  //float erVi = 100 - mVi;
   rldiff(dt, erVi - erVi1, 1.0, mTmu, mdVi); erVi1 = erVi;
-  //saturate(mdVi, -100,100);
-  //mdVi = getTr(); 
 #if (__SelCtrl==_slCtrl_2PD)
 /* -Fi       -Vi        Us
     |   ___Vs |   ___   |      ___    _______       _______ Ui Um
@@ -139,8 +148,6 @@ sFi_|+ |_eFi_|Kpf|_|+ |_eVi_|Kp|_|s |_|Kdv|_|_1__|_uM_
  Fi_|- |       Vi__|- |       Ac_|g |       |sTmi|
     |__|           |__|          |n_|       |____|
 */
-
-
 
  // float eVi = Kpf * (setFi - mFi) - mVi;
   //eVi = 1000 - mVi;
@@ -171,14 +178,12 @@ sFi_|+ |_eFi_|Kpf|_|+ |_eVi__Kp__|s |_|Kdv|_|_1__|_uM_
   integr(dt, Us, mTe, Uv); // Uv/Us = 1/(1 + s mTe)
   saturate(Uv, -1000.0,1000.0);
   integr(dt, Uv, mTi, Ui);
-  saturate(Ui, -500.0,500.0);
+  saturate(Ui, -1000.0,1000.0);
   Um = Ui + Uv; // Um/Uv = 1 + 1/(s mTi) = (1 + s mTi)/( s mTi)
-  saturate(Um, -500.0,500.0); // Um/Us = (1 + s mTi) / ( (1 + s mTe) s mTi); if mTi = mTe then Um/Us = 1 / (s mTe)
+  saturate(Um, -1000.0,1000.0); // Um/Us = (1 + s mTi) / ( (1 + s mTe) s mTi); if mTi = mTe then Um/Us = 1 / (s mTe)
 
   intert(dt, Um,1.0,mTmu,Umm);
-  //rldiff(dt, Um-uMold, Tddmpf, Tddmpf, muMd );
   rldiff(dt, Umm-uMold, mTmu, mTmu, muMd); uMold = Umm;
-  //updateMdl(dt, Uv*(1+1/mTv));
   updateMdl(dt, muMd);
   //updateMdl(dt, Uv);
   return Um;

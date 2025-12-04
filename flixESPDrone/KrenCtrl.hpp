@@ -29,6 +29,7 @@ public:
   KrenCtrl();
   float updateCtrl(float dt, float setFi, float Fi, float Vi);
   float GetUi();
+  void reset();
 };
 
 #endif /* __KrenCtrl_HPP */

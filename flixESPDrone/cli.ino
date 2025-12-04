@@ -120,8 +120,14 @@ void doCommand(String str, bool echo = false) {
 		print("landed: %d\n", landed);
 	} else if (command == "arm") {
 		armed = true;
+		pdpiRoll.reset();    // ⚠️ RESET bộ điều khiển Roll khi arm
+		pdpiPitch.reset();   // ⚠️ RESET bộ điều khiển Pitch khi arm
+		print("Drone armed - Controllers reset\n");
 	} else if (command == "disarm") {
 		armed = false;
+		pdpiRoll.reset();    // ⚠️ RESET khi disarm
+		pdpiPitch.reset();
+		print("Drone disarmed - Controllers reset\n");
 	} else if (command == "stab") {
 		mode = STAB;
 	} else if (command == "acro") {
@@ -143,7 +149,7 @@ void doCommand(String str, bool echo = false) {
 	} else if (command == "log") {
 		if (arg0 != "") {
 			glog = arg0.toInt();
-			if ((glog < 0 ) || (glog > 2)) glog = 0;
+			if ((glog < 0 ) || (glog > 3)) glog = 0;
 		}
 		else dumpLog();
 	} else if (command == "cr") {
@@ -161,9 +167,11 @@ void doCommand(String str, bool echo = false) {
 		testMotor(MOTOR_REAR_RIGHT);
 	} else if (command == "mrl") {
 		testMotor(MOTOR_REAR_LEFT);
-	} else if (command == "mtr" && arg0 != "" && arg1 != "") {
+	} 
+	else if (command == "mtr" && arg0 != "" && arg1 != "") {
 		setMotor(arg0.toInt(), arg1.toInt());
-	} else if (command == "dscnl" && arg0 != "" && arg1 != "") {
+	} 
+	else if (command == "dscnl" && arg0 != "" && arg1 != "") {
 		DisableCnl(arg0.toInt(), arg1.toInt());
 	} else if (command == "sys") {
 #ifdef ESP32
@@ -188,7 +196,6 @@ void doCommand(String str, bool echo = false) {
 		syncParameters();
 	} else if (command == "reset") {
 		attitude = Quaternion();
-
 		ESP.restart();
 	} else {
 		print("Invalid command: %s\n", command.c_str());

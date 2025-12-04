@@ -9,7 +9,7 @@
 #include "util.h"
 
 #define WEIGHT_ACC 0.003
-#define RATES_LFP_ALPHA 0.1 // cutoff frequency ~ 40 Hz
+#define RATES_LFP_ALPHA 0.2 // cutoff frequency ~ 40 Hz
 
 void estimate() {
 	applyGyro();

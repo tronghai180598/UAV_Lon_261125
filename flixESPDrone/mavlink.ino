@@ -12,8 +12,7 @@
 #define MAVLINK_RATE_SLOW 1
 #define MAVLINK_RATE_FAST 10
 #define MAVLINK_CONTROL_YAW_DEAD_ZONE 0.1f
-extern float roll_H;
-extern float pitch_H;
+
 bool mavlinkConnected = false;
 float mavDisable = 0.0;
 String mavlinkPrintBuffer;
@@ -22,63 +21,30 @@ float controlTime;
 //extern float controlTime;
 extern float controlRoll, controlPitch, controlThrottle, controlYaw, controlMode;
 
-
-static inline void quat_to_euler_flu(float w,float x,float y,float z,
-                                     float &roll,float &pitch,float &yaw)
-{
-    // aerospace X(roll)-Y(pitch)-Z(yaw), frame FLU
-    float sinr_cosp = 2.f*(w*x + y*z);
-    float cosr_cosp = 1.f - 2.f*(x*x + y*y);
-    roll = atan2f(sinr_cosp, cosr_cosp);
-
-    float sinp = 2.f*(w*y - z*x);
-    if (fabsf(sinp) >= 1.f) pitch = copysignf(M_PI/2.f, sinp);
-    else                    pitch = asinf(sinp);
-
-    float siny_cosp = 2.f*(w*z + x*y);
-    float cosy_cosp = 1.f - 2.f*(y*y + z*z);
-    yaw = atan2f(siny_cosp, cosy_cosp);
-}
-static inline void euler_to_quat_flu(float roll,float pitch,float yaw,
-                                     float &w,float &x,float &y,float &z)
-{
-    float cr = cosf(roll*0.5f),  sr = sinf(roll*0.5f);
-    float cp = cosf(pitch*0.5f), sp = sinf(pitch*0.5f);
-    float cy = cosf(yaw*0.5f),   sy = sinf(yaw*0.5f);
-    // X(roll) -> Y(pitch) -> Z(yaw)
-    w = cr*cp*cy + sr*sp*sy;
-    x = sr*cp*cy - cr*sp*sy;
-    y = cr*sp*cy + sr*cp*sy;
-    z = cr*cp*sy - sr*sp*cy;
-}
-
 void processMavlink() {
-  if(mavDisable == 1){
+  if (mavDisable == 0) {
     sendMavlink();
     receiveMavlink();
     return;
   }
   uint8_t buf[MAVLINK_MAX_PACKET_LEN];
   int len = receiveWiFi(buf, MAVLINK_MAX_PACKET_LEN);
-  if(len){
+  if (len) {
     buf[len] = 0;
-    //Serial.write(buf, len);
     doCommand((char*) buf);
-    //sendWiFi((uint8_t*) "rc\n", strlen("rc\n"));
-    const char *str = mavlinkPrintBuffer.c_str();
-          sendWiFi((uint8_t*) str, strlen(str));
-    mavlinkPrintBuffer.clear();
   }
+	while (!mavlinkPrintBuffer.isEmpty()){
+	const char *str = mavlinkPrintBuffer.c_str();
+    sendWiFi((uint8_t*) str, strlen(str));
+    mavlinkPrintBuffer.clear();
+	}
 }
-
 void sendMavlink() {
 	sendMavlinkPrint();
 
 	mavlink_message_t msg;
 	uint32_t time = t * 1000;
-
 	static Rate slow(MAVLINK_RATE_SLOW), fast(MAVLINK_RATE_FAST);
-
 	if (slow) {
 		mavlink_msg_heartbeat_pack(SYSTEM_ID, MAV_COMP_ID_AUTOPILOT1, &msg, MAV_TYPE_QUADROTOR, MAV_AUTOPILOT_GENERIC,
 			(armed ? MAV_MODE_FLAG_SAFETY_ARMED : 0) |
@@ -93,20 +59,13 @@ void sendMavlink() {
 			MAV_VTOL_STATE_UNDEFINED, landed ? MAV_LANDED_STATE_ON_GROUND : MAV_LANDED_STATE_IN_AIR);
 		sendMessage(&msg);
 	}
-  float r0, p0, yaw_flu = 0.f;
-  quat_to_euler_flu(attitude.w, attitude.x, attitude.y, attitude.z, r0, p0, yaw_flu);
-	float wq, xq, yq, zq;
-	euler_to_quat_flu(roll_H, pitch_H, yaw_flu, wq, xq, yq, zq);
+
 	if (fast && mavlinkConnected) {
-			const float zeroQuat[] = {0, 0, 0, 0};
-	    mavlink_msg_attitude_quaternion_pack(
-			SYSTEM_ID, MAV_COMP_ID_AUTOPILOT1, &msg,
-			time,
-			wq, xq, -yq, -zq,        // FLU -> FRD: đảo y, z
-			rates.x, -rates.y, -rates.z,
-			zeroQuat
-	);
-	sendMessage(&msg);
+		const float zeroQuat[] = {0, 0, 0, 0};
+		mavlink_msg_attitude_quaternion_pack(SYSTEM_ID, MAV_COMP_ID_AUTOPILOT1, &msg,
+			time, attitude.w, attitude.x, -attitude.y, -attitude.z, rates.x, -rates.y, -rates.z, zeroQuat); // convert to frd
+		sendMessage(&msg);
+
 		/*mavlink_msg_rc_channels_raw_pack(SYSTEM_ID, MAV_COMP_ID_AUTOPILOT1, &msg, controlTime * 1000, 0,
 			channels[0], channels[1], channels[2], channels[3], channels[4], channels[5], channels[6], channels[7], UINT8_MAX);
 		if (channels[0] != 0) sendMessage(&msg); // 0 means no RC input*/
@@ -283,6 +242,14 @@ void handleMavlink(const void *_msg) {
 			if (m.param1 && controlThrottle > 0.05) return; // don't arm if throttle is not low
 			accepted = true;
 			armed = m.param1 == 1;
+			// ⚠️ RESET bộ điều khiển khi arm/disarm qua MAVLink
+			if (armed) {
+				pdpiRoll.reset();
+				pdpiPitch.reset();
+			} else {
+				pdpiRoll.reset();
+				pdpiPitch.reset();
+			}
 		}
 
 		if (m.command == MAV_CMD_DO_SET_MODE) {

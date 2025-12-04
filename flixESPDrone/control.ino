@@ -29,9 +29,8 @@
 #define PITCH_I ROLL_I
 #define PITCH_D ROLL_D
 #define YAW_P 3
-#define PITCHRATE_MAX radians(360)
-#define ROLLRATE_MAX radians(360)
-#define YAWRATE_MAX radians(300)
+
+#define YAWRATE_MAX radians(10)
 #define TILT_MAX radians(30)
 #define RATES_D_LPF_ALPHA 0.2 // cutoff frequency ~ 40 Hz
 
@@ -48,7 +47,11 @@ PID yawRatePID(YAWRATE_P, YAWRATE_I, YAWRATE_D);
 PID rollPID(ROLL_P, ROLL_I, ROLL_D);
 PID pitchPID(PITCH_P, PITCH_I, PITCH_D);
 PID yawPID(YAW_P, 0, 0);
-Vector maxRate(ROLLRATE_MAX, PITCHRATE_MAX, YAWRATE_MAX);
+
+PID altPID(0.2, 0.0, 0.0); // altitude outer loop PID
+PID velPID(0.08, 0.01, 0.008);
+#define ALT_SP_MIN_M     0.00f
+#define ALT_SP_MAX_M     2.00f
 float tiltMax = TILT_MAX;
 
 Quaternion attitudeTarget;
@@ -59,98 +62,82 @@ float thrustTarget;
 
 KrenCtrl pdpiRoll;// = KrenCtrl();
 KrenCtrl pdpiPitch; // = KrenCtrl();
-
+float rollSp_mrad  = 0.0f;
+float pitchSp_mrad = 0.0f;
 extern const int MOTOR_REAR_LEFT, MOTOR_REAR_RIGHT, MOTOR_FRONT_RIGHT, MOTOR_FRONT_LEFT;
-extern float controlRoll, controlPitch, controlThrottle, controlYaw, controlMode, roll_H, pitch_H, dt;
+extern float controlRoll, controlPitch, controlThrottle, controlYaw, controlMode, roll_H, pitch_H, dt, vz_kf_cm_s, z_kf_cm;
 #define RATES_LFP_ALPHA 0.2 // cutoff frequency ~ 40 Hz
-
-void setupControll(){
-	//pdpiRoll.setCtrlParam();
-	//pdpiPitch.setCtrlParam();
-}
-
+float pich = 0.0f;
+float rll = 0.0f;
 void control() {
 	interpretControls();
-	static LowPassFilter<Vector> ratesFilter(RATES_LFP_ALPHA);
-	rates = ratesFilter.update(gyro);
-	//failsafe();
-	
-	torqueTarget.x = pdpiRoll.updateCtrl(dt, controlRoll, roll_H, rates.x) / 1000.0f;
-	torqueTarget.y = pdpiPitch.updateCtrl(dt, controlPitch, pitch_H, rates.y) / 1000.0f;
-
-	//controlAttitude();
-	//controlRates();
+	//controlAltitude();
+	controlAttitude();
 	controlTorque();
 }
 
 void interpretControls() {
-	mode = STAB; return;
-	// NOTE: put ACRO or MANUAL modes there if you want to use them
-/*	if (controlMode < 0.25) mode = STAB;
-	if (controlMode < 0.75) mode = STAB;
-	if (controlMode > 0.75) mode = STAB;
-
-	if (mode == AUTO) return; // pilot is not effective in AUTO mode
-
-	if (controlThrottle < 0.05 && controlYaw > 0.95) armed = true; // arm gesture
-	if (controlThrottle < 0.05 && controlYaw < -0.95) armed = false; // disarm gesture
-
-	thrustTarget = controlThrottle;
-
-	if (mode == STAB) {
-		float yawTarget = attitudeTarget.getYaw();
-		if (!armed || invalid(yawTarget) || controlYaw != 0) yawTarget = attitude.getYaw(); // reset yaw target
-		attitudeTarget = Quaternion::fromEuler(Vector(controlRoll * tiltMax, controlPitch * tiltMax, yawTarget));
-		ratesExtra = Vector(0, 0, -controlYaw * maxRate.z); // positive yaw stick means clockwise rotation in FLU
-	}
-
-	if (mode == ACRO) {
-		attitudeTarget.invalidate(); // skip attitude control
-		ratesTarget.x = controlRoll * maxRate.x;
-		ratesTarget.y = controlPitch * maxRate.y;
-		ratesTarget.z = -controlYaw * maxRate.z; // positive yaw stick means clockwise rotation in FLU
-	}
-
-	if (mode == MANUAL) { // passthrough mode
-		attitudeTarget.invalidate(); // skip attitude control
-		ratesTarget.invalidate(); // skip rate control
-		torqueTarget = Vector(controlRoll, controlPitch, -controlYaw) * 0.01;
-	}*/
+	mode = STAB;
+//	thrustTarget = controlThrottle;
+//	rollSp_mrad = controlRoll* tiltMax*1000.0f; // to mrad
+//	pitchSp_mrad = controlPitch* tiltMax*1000.0f; // to mrad
 }
+void controlAltitude(){
+    if (!armed) {
+        thrustTarget = 0.0f;
+        return;
+    }
+    if (controlThrottle < 0.05f) {
+        thrustTarget = controlThrottle;
+        altPID.reset();
+        velPID.reset();
+        return;
+    }
+    float spCmd = ALT_SP_MIN_M + (ALT_SP_MAX_M - ALT_SP_MIN_M) * constrain(controlThrottle, 0.0f, 1.0f);
+    float altError = spCmd - z_kf_cm;          // cm -> m
+    float altOutput = altPID.update(altError);     // m/s
 
-void controlAttitude() {
-	if (!armed || attitudeTarget.invalid() || thrustTarget < 0.1) return; // skip attitude control
-
-	const Vector up(0, 0, 1);
-	Vector upActual = Quaternion::rotateVector(up, attitude);
-	Vector upTarget = Quaternion::rotateVector(up, attitudeTarget);
-
-	Vector error = Vector::rotationVectorBetween(upTarget, upActual);
-
-	ratesTarget.x = rollPID.update(error.x) + ratesExtra.x;
-	ratesTarget.y = pitchPID.update(error.y) + ratesExtra.y;
-
-	float yawError = wrapAngle(attitudeTarget.getYaw() - attitude.getYaw());
-	ratesTarget.z = yawPID.update(yawError) + ratesExtra.z;
+    float velError = altOutput - vz_kf_cm_s;   // m/s
+    float velOutput = velPID.update(velError);     // thrust delta
+    const float hoverThrust = 0.5f; // chỉnh theo thực tế
+    thrustTarget = constrain(hoverThrust + velOutput, 0.0f, 1.0f);
 }
+void controlAttitude(){
+	static LowPassFilter<Vector> ratesFilter(RATES_LFP_ALPHA);
+	rates = ratesFilter.update(gyro);
 
-void controlRates() {
-	if (!armed || ratesTarget.invalid() || thrustTarget < 0.1) return; // skip rates control
-
-	Vector error = ratesTarget - rates;
-
-	// Calculate desired torque, where 0 - no torque, 1 - maximum possible torque
-	torqueTarget.x = rollRatePID.update(error.x);
-	torqueTarget.y = pitchRatePID.update(error.y);
-	torqueTarget.z = yawRatePID.update(error.z);
+	//failsafe();
+	torqueTarget.x = pdpiRoll.updateCtrl(dt, rollSp_mrad, roll_H, rates.x) / 1000.0f;
+	torqueTarget.y = pdpiPitch.updateCtrl(dt, pitchSp_mrad, pitch_H, rates.y) / 1000.0f;
+	float yawRateSp = -controlYaw * YAWRATE_MAX;
+	torqueTarget.z = yawRatePID.update(yawRateSp - rates.z);
 }
 
 uint8_t bnRll=0, bnPtch=0, bnYaw=0, bManualMtr = 0;
 void DisableCnl(int cnl, int val){	
-	if(cnl == NoRoll) bnRll = val;
-	else if(cnl == NoPitch) bnPtch = val;
+	if(cnl == NoRoll) {
+		bnRll = val;
+		if (!val) {
+			pdpiRoll.reset();    // Reset roll khi bật
+			pdpiPitch.reset();   // ⚠️ RESET tất cả (để an toàn)
+		}
+	}
+	else if(cnl == NoPitch) {
+		bnPtch = val;
+		if (!val) {
+			pdpiRoll.reset();    // ⚠️ RESET tất cả (để an toàn)
+			pdpiPitch.reset();   // Reset pitch khi bật
+		}
+	}
 	else if(cnl == NoYaw) bnYaw = val;
-	else bnRll = bnPtch = bnYaw= val;
+	else {
+		bnRll = bnPtch = bnYaw = val;
+		if (!val) {
+			pdpiRoll.reset();    // Reset tất cả kênh
+			pdpiPitch.reset();
+		}
+	}
+	print("Channel %d set to %d - Controllers reset\n", cnl, val);
 }
 void controlTorque() {
 	if (!torqueTarget.valid()) return; // skip torque control
@@ -160,17 +147,8 @@ void controlTorque() {
 		return;
 	}
 
-
 	if (bManualMtr) return;
-/*
-	if (thrustTarget < 0.1) {
-		motors[0] = 0.1; // idle thrust
-		motors[1] = 0.1;
-		motors[2] = 0.1;
-		motors[3] = 0.1;
-		return;
-	}
-*/
+
 	motors[MOTOR_FRONT_LEFT] = thrustTarget + (bnRll?0:torqueTarget.x) - (bnPtch?0:torqueTarget.y) + (bnYaw?0:torqueTarget.z);
 	motors[MOTOR_FRONT_RIGHT] = thrustTarget - (bnRll?0:torqueTarget.x) - (bnPtch?0:torqueTarget.y) - (bnYaw?0:torqueTarget.z);
 	motors[MOTOR_REAR_LEFT] = thrustTarget + (bnRll?0:torqueTarget.x) + (bnPtch?0:torqueTarget.y) - (bnYaw?0:torqueTarget.z);
