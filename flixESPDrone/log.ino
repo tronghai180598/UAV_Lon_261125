@@ -42,20 +42,19 @@ void prepareLogData() {
 
 int glog = 0; int lcntr;
 void logData() {
+	if (glog == 0) {
+        return;
+    }
 	if(glog == 1){
 		if(!(lcntr > 0)){
 			print("%d %d %d %d %d\n", int(roll_H), int(pdpiRoll.mFi), int(gyro.x), int(pdpiRoll.mVi) ,int(torqueTarget.x*1000) );		
-			lcntr = 50;
+			lcntr = 10;
 		}
 		lcntr--;
 		return;
 	}
 	if(glog == 2){
-		if(!(lcntr > 0)){
-			print("%d %d % d % d %d\n", int(pitch_H), int(pdpiPitch.mFi), int(gyro.y), int(pdpiPitch.mVi), int(torqueTarget.y*1000) );		
-			lcntr = 50;
-		}
-		lcntr--;
+			print("%d %d\n",  int(torqueTarget.x*1000), int(pdpiRoll.Us) );		
 		return;
 	}
 	if(glog == 3){

@@ -6,7 +6,8 @@
 #include "vector.h"
 #include "quaternion.h"
 #include "util.h"
-
+#include <driver/adc.h>
+extern const adc1_channel_t BAT_CH;  // nếu cần
 #define SERIAL_BAUDRATE 115200
 #define WIFI_ENABLED 1
 
@@ -28,6 +29,7 @@ void setup() {
 	setupLED();
 	setupMotors();
 	setLED(true);
+
 #if WIFI_ENABLED
 	setupWiFi();
 #endif

@@ -13,7 +13,6 @@ extern float rollChannel, pitchChannel, throttleChannel, yawChannel, armedChanne
 extern KrenCtrl pdpiRoll;
 extern KrenCtrl pdpiPitch;
 extern float kGr;
-
 Preferences storage;
 
 struct Parameter {

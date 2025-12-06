@@ -87,6 +87,9 @@ private slots:
     void on_checkBoxPlotGyro_toggled(bool checked);
     void on_checkBoxPlotKlmGyro_toggled(bool checked);
     void on_checkBoxPlotTorque_toggled(bool checked);
+    void on_btnSaveLog_clicked();
+    void on_btnLog2_clicked();
+
 
 private:
     Ui::Dialog *ui;
@@ -99,14 +102,22 @@ private:
     QVector<double> logKlmgyro;
     QVector<double> logTorque;
     double logIndex = 0.0;   // trục X: số thứ tự mẫu
+    double logIndex2 = 0.0;
+    int currentLogMode = 0;
     bool capturingParams = false;
+    QVector<double> logTime2;
+    QVector<double> logUy;     // torqueTarget.y*1000
+    QVector<double> logUs;     // pdpiRoll.Us
+
     bool isArmed = false;
     void updateArmUi();
 
     void openSerial();
     void sendCommand(const QString &cmd);
-    void setupPlot();                 // cấu hình QCustomPlot
+    void setupPlotMode1();                 // cấu hình QCustomPlot
+    void setupPlotMode2();
     void addLogSample(int r, int g, int kr, int kg,int t);  // thêm 1 mẫu
+    void addLogSample2(int uy, int us);
     void handleLogLine(const QString &line); // xử lý 1 dòng log "a b c"
     void updateGraphVisibility();
 };

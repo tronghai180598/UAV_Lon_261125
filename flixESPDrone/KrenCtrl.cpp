@@ -6,7 +6,7 @@
 #define _slCtrl_Modal 2
 #define _slCtrl_Slide 3
 #define _slCtrl_MaxFs 4
-#define __SelCtrl 1
+#define __SelCtrl 3
 
 KrenCtrl::KrenCtrl(float Tf, float Tv, float Tm, float Tmi){
   mTi = 0.2;
@@ -66,12 +66,12 @@ Fs--O--|Kpf|--O--|KpV|--O--O--|sat|--|1/(sTe)|--*--|1/(sTi)|--O-->u
   Kdf = 1.25 * mTm * Kpf / mTf;
 #endif
 #if (__SelCtrl==_slCtrl_Slide)
-  mTi = mTe;
-  mTmu = mTm;
+  // mTi = mTe;
+  // mTmu = mTm;
   //Kd  = 1000;
-  Kdv = 1.0;
-  Kpv  = mTv/mTi;
-  Kpf = mTf / ( 4 * 4 * mTm );
+  Kdv = 0.05;
+  Kpv  = 0.1;
+  Kpf = 1.0;
 #endif
 #if (__SelCtrl==_slCtrl_MaxFs)
 /*   __       ___   __            __   __   ____
@@ -132,6 +132,7 @@ Fs--O--|Kpf|--O--|KpV|--O--O--|sat|--|1/(sTe)|--*--|1/(sTi)|--O-->u
              |_______|mdVi
 */
   Us =  erVi * Kpv + mdVi * Kdv;
+  Us -= Uv;
 #endif
 #if (__SelCtrl==_slCtrl_Modal)
 /*   __       ___   __       __   __         ____
@@ -151,8 +152,32 @@ sFi_|+ |_eFi_|Kpf|_|+ |_eVi_|Kp|_|s |_|Kdv|_|_1__|_uM_
 
  // float eVi = Kpf * (setFi - mFi) - mVi;
   //eVi = 1000 - mVi;
-  Us = ( ( Kpv * erVi  - Kdv*mdVi ) > 0 )? 1000:(-1000);
-  if((Us * oUi) < 0) {  oUi = Us;  Us = 0; } oUi = Us; // через ноль
+
+  float s = (Kpv * erVi + Kdv * mdVi) - Uv;
+
+  // tham số chỉnh tay
+  const float s_dead = 0.001f;   // deadzone quanh 0
+  const float phi    = 0.02f;    // "độ dày lớp biên", thử 0.01–0.05
+  const float Umax   = 1000.0f;  // biên điều khiển như trước
+
+  // ----- Luật điều khiển SMC với boundary layer -----
+  if (fabsf(s) < s_dead) {
+      // rất gần mặt trượt -> tắt điều khiển, tránh rung
+      Us = 0.0f;
+  } else {
+      // dùng sat(s/phi) thay vì sign(s)
+      float x = s / phi;
+      if (x >  1.0f) x =  1.0f;
+      if (x < -1.0f) x = -1.0f;
+
+      Us = Umax * x;
+  }
+
+  if (Us * oUi < 0.0f) {
+      Us = 0.0f;
+  }
+  oUi = Us;
+
 #endif //(__SelCtrl==_slCtrl_Slide)
 #if (__SelCtrl==_slCtrl_MaxFs)
 /*   __       ___   __            __   ___   ____
@@ -173,7 +198,7 @@ sFi_|+ |_eFi_|Kpf|_|+ |_eVi__Kp__|s |_|Kdv|_|_1__|_uM_
     if((uI * oUi) < 0) {  oUi = uI;  uI = 0; } oUi = uI; // через ноль
  }
 #endif //(__SelCtrl==_slCtrl_MaxFs)
-  Us -= Uv;
+ 
   saturate(Us, -1000.0,1000.0);
   integr(dt, Us, mTe, Uv); // Uv/Us = 1/(1 + s mTe)
   saturate(Uv, -1000.0,1000.0);

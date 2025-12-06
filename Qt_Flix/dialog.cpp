@@ -1,5 +1,9 @@
 #include "dialog.h"
 #include "ui_dialog.h"
+#include <QFile>
+#include <QTextStream>
+#include <QDir>
+#include <QDateTime>
 
 #include <QDebug>
 
@@ -9,6 +13,7 @@ Dialog::Dialog(QWidget *parent)
     , serialPort(new QSerialPort(this))
 {
     ui->setupUi(this);
+     currentLogMode = 0;
 
     // Thrust: 0..1000
     ui->verticalSliderThrust->setMinimum(0);
@@ -34,7 +39,8 @@ Dialog::Dialog(QWidget *parent)
                      this, &Dialog::handleSerialData);
 
     // Cấu hình plot
-    setupPlot();
+    setupPlotMode1();
+    setupPlotMode2();
 }
 
 Dialog::~Dialog()
@@ -62,7 +68,7 @@ void Dialog::openSerial()
     }
 }
 
-void Dialog::setupPlot()
+void Dialog::setupPlotMode1()
 {
     ui->customPlot->clearGraphs();
 
@@ -102,6 +108,28 @@ void Dialog::setupPlot()
 
     // Cập nhật hiển thị theo 5 checkbox plot
     updateGraphVisibility();
+    ui->customPlot->replot();
+}
+
+void Dialog::setupPlotMode2()
+{
+    ui->customPlot->clearGraphs();
+
+    // graph 0: torqueTarget.y*1000
+    ui->customPlot->addGraph();
+    ui->customPlot->graph(0)->setName("u_y*1000");
+    ui->customPlot->graph(0)->setPen(QPen(Qt::red));
+
+    // graph 1: Us
+    ui->customPlot->addGraph();
+    ui->customPlot->graph(1)->setName("Us");
+    ui->customPlot->graph(1)->setPen(QPen(Qt::blue));
+
+    ui->customPlot->xAxis->setLabel("samples");
+    ui->customPlot->yAxis->setLabel("value");
+    ui->customPlot->legend->setVisible(true);
+
+    // Nếu bạn có checkbox riêng cho mode2, có thể điều khiển ở đây.
     ui->customPlot->replot();
 }
 
@@ -151,6 +179,87 @@ void Dialog::addLogSample(int r, int g, int kr, int kg ,int t)
     ui->customPlot->replot();
 }
 
+void Dialog::addLogSample2(int uy, int us)
+{
+    logIndex2 += 1.0;
+
+    logTime2.append(logIndex2);
+    logUy.append(uy);
+    logUs.append(us);
+
+    const int maxPoints = 500;
+    if (logTime2.size() > maxPoints) {
+        int extra = logTime2.size() - maxPoints;
+        logTime2.remove(0, extra);
+        logUy.remove(0, extra);
+        logUs.remove(0, extra);
+    }
+
+    if (ui->customPlot->graphCount() >= 2) {
+        ui->customPlot->graph(0)->setData(logTime2, logUy);
+        ui->customPlot->graph(1)->setData(logTime2, logUs);
+    }
+
+    if (!logTime2.isEmpty()) {
+        ui->customPlot->xAxis->setRange(logTime2.last(), 200, Qt::AlignRight);
+    }
+    ui->customPlot->yAxis->rescale(true);
+    ui->customPlot->replot();
+}
+void Dialog::on_btnSaveLog_clicked()
+{
+    QString baseDir = QDir::homePath() + "/Documents/project_quad/UAV_Lon_ESP8266";
+    QDir dir;
+    if (!dir.exists(baseDir)) {
+        dir.mkpath(baseDir);
+    }
+
+    QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss");
+    QString fileName = baseDir + "/log_" + timestamp + ".csv";
+
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        qDebug() << "Không mở được file để ghi:" << fileName << file.errorString();
+        return;
+    }
+
+    QTextStream out(&file);
+
+    if (currentLogMode == 1) {
+        // HEADER 5 cột
+        out << "index,roll_H,Kalman_roll,gyro_x,Kalman_gyro,torque\n";
+
+        int n = logTime.size();
+        for (int i = 0; i < n; ++i) {
+            out << logTime.value(i)      << ","
+                << logRoll.value(i)      << ","
+                << logKlmroll.value(i)   << ","
+                << logGyro.value(i)      << ","
+                << logKlmgyro.value(i)   << ","
+                << logTorque.value(i)    << "\n";
+        }
+    }
+    else if (currentLogMode == 2) {
+        // HEADER 2 cột (hoặc 3 nếu muốn index + 2 signal)
+        out << "index,u_y*1000,Us\n";
+
+        int n = logTime2.size();
+        for (int i = 0; i < n; ++i) {
+            out << logTime2.value(i) << ","
+                << logUy.value(i)    << ","
+                << logUs.value(i)    << "\n";
+        }
+    }
+    else {
+        // không có mode log đang chạy
+        out << "# No log mode active\n";
+    }
+
+    file.close();
+    qDebug() << "Đã lưu log vào:" << fileName;
+}
+
+
 void Dialog::updateArmUi()
 {
     if (isArmed) {
@@ -171,40 +280,44 @@ void Dialog::updateArmUi()
 
 void Dialog::handleLogLine(const QString &line)
 {
-    // --- 1) Thử parse như dòng LOG 5 SỐ ---
     QStringList parts = line.split(QRegExp("\\s+"), Qt::SkipEmptyParts);
 
-    bool ok1 = false, ok2 = false, ok3 = false, ok4 = false, ok5 = false;
-    int r = 0, kr = 0, g = 0, kg = 0, t = 0;
+    // MODE 1: 5 số
+    if (currentLogMode == 1 && parts.size() >= 5) {
+        bool ok1=false, ok2=false, ok3=false, ok4=false, ok5=false;
+        int r  = parts[0].toInt(&ok1);
+        int kr = parts[1].toInt(&ok2);
+        int g  = parts[2].toInt(&ok3);
+        int kg = parts[3].toInt(&ok4);
+        int t  = parts[4].toInt(&ok5);
 
-    if (parts.size() >= 5) {
-        r  = parts[0].toInt(&ok1); // roll_H
-        kr = parts[1].toInt(&ok2); // Kalman_roll
-        g  = parts[2].toInt(&ok3); // gyro.x
-        kg = parts[3].toInt(&ok4); // Kalman_gyro
-        t  = parts[4].toInt(&ok5); // uM / torque*1000
-    }
-
-    if (ok1 && ok2 && ok3 && ok4 && ok5) {
-        // Dòng log 5 số → chỉ dùng cho đồ thị
-        addLogSample(r, g, kr, kg, t);
-        return;
-    }
-
-    // --- 2) Không phải log số: xử lý TEXT (kết quả lệnh p) ---
-    if (capturingParams) {
-        if (line.contains(" = ")) {
-            // Dòng parameter kiểu "NAME = VALUE"
-            ui->textEditLog->append(line);
+        if (ok1 && ok2 && ok3 && ok4 && ok5) {
+            addLogSample(r, g, kr, kg, t); // như cũ
             return;
-        } else {
-            // Gặp dòng khác -> coi như hết danh sách params
-            capturingParams = false;
         }
     }
 
-    // Nếu muốn, có thể append các dòng text khác vào log:
-    // ui->textEditLog->append(line);
+    // MODE 2: 2 số (u_y, Us)
+    if (currentLogMode == 2 && parts.size() >= 2) {
+        bool ok1=false, ok2=false;
+        int uy = parts[0].toInt(&ok1);
+        int us = parts[1].toInt(&ok2);
+        if (ok1 && ok2) {
+            addLogSample2(uy, us);
+            return;
+        }
+    }
+
+    // phần còn lại: params, text...
+    if (capturingParams) {
+        if (line.contains(" = ")) {
+            ui->textEditLog->append(line);
+            return;
+        } else {
+            capturingParams = false;
+        }
+    }
+    // ui->textEditLog->append(line); // nếu muốn log mọi text
 }
 
 void Dialog::sendCommand(const QString &cmd)
@@ -223,6 +336,20 @@ void Dialog::sendCommand(const QString &cmd)
 
     qDebug() << ">> gửi:" << line.trimmed();
 }
+
+void Dialog::on_btnLog2_clicked()
+{
+    currentLogMode = 2;
+
+    logTime2.clear();
+    logUy.clear();
+    logUs.clear();
+    logIndex2 = 0.0;
+
+    setupPlotMode2();
+    sendCommand("log 2");
+}
+
 
 void Dialog::on_push_arm_clicked()
 {
@@ -476,6 +603,8 @@ void Dialog::on_btnGetParams_clicked()
 
 void Dialog::on_btnLogOn_clicked()
 {
+    currentLogMode = 1;
+
     logTime.clear();
     logRoll.clear();
     logKlmroll.clear();
@@ -484,9 +613,7 @@ void Dialog::on_btnLogOn_clicked()
     logTorque.clear();
     logIndex = 0.0;
 
-    setupPlot();  // vẽ lại trục/graph sạch
-
-    // Gửi lệnh log 1 xuống Flix
+    setupPlotMode1();
     sendCommand("log 1");
 }
 

@@ -18,7 +18,7 @@
 #define ROLLRATE_I PITCHRATE_I
 #define ROLLRATE_D PITCHRATE_D
 #define ROLLRATE_I_LIM PITCHRATE_I_LIM
-#define YAWRATE_P 0.3
+#define YAWRATE_P 0.4
 #define YAWRATE_I 0.0
 #define YAWRATE_D 0.0
 #define YAWRATE_I_LIM 0.3
@@ -47,6 +47,7 @@ PID yawRatePID(YAWRATE_P, YAWRATE_I, YAWRATE_D);
 PID rollPID(ROLL_P, ROLL_I, ROLL_D);
 PID pitchPID(PITCH_P, PITCH_I, PITCH_D);
 PID yawPID(YAW_P, 0, 0);
+const float MAX_TORQUE = 0.15f; // tuỳ khung, thử 0.05→0.2
 
 PID altPID(0.2, 0.0, 0.0); // altitude outer loop PID
 PID velPID(0.08, 0.01, 0.008);
@@ -62,13 +63,13 @@ float thrustTarget;
 
 KrenCtrl pdpiRoll;// = KrenCtrl();
 KrenCtrl pdpiPitch; // = KrenCtrl();
-float rollSp_mrad  = 0.0f;
-float pitchSp_mrad = 0.0f;
+
 extern const int MOTOR_REAR_LEFT, MOTOR_REAR_RIGHT, MOTOR_FRONT_RIGHT, MOTOR_FRONT_LEFT;
 extern float controlRoll, controlPitch, controlThrottle, controlYaw, controlMode, roll_H, pitch_H, dt, vz_kf_cm_s, z_kf_cm;
 #define RATES_LFP_ALPHA 0.2 // cutoff frequency ~ 40 Hz
 float pich = 0.0f;
 float rll = 0.0f;
+
 void control() {
 	interpretControls();
 	//controlAltitude();
@@ -102,13 +103,33 @@ void controlAltitude(){
     const float hoverThrust = 0.5f; // chỉnh theo thực tế
     thrustTarget = constrain(hoverThrust + velOutput, 0.0f, 1.0f);
 }
+static float torquePrevX = 0.0f;
+float maxTorqueRate = 1.0f;   // [per second] -> chỉnh cho vừa
+const float ROLL_LIMIT      = radians(40);   // giới hạn góc an toàn trên stand
+const float ROLLRATE_LIMIT  = radians(200);  // giới hạn tốc độ quay
 void controlAttitude(){
 	static LowPassFilter<Vector> ratesFilter(RATES_LFP_ALPHA);
 	rates = ratesFilter.update(gyro);
+	float rollAbs    = fabsf(roll_H);
+	float rollRateAbs = fabsf(rates.x);
 
 	//failsafe();
-	torqueTarget.x = pdpiRoll.updateCtrl(dt, rollSp_mrad, roll_H, rates.x) / 1000.0f;
-	torqueTarget.y = pdpiPitch.updateCtrl(dt, pitchSp_mrad, pitch_H, rates.y) / 1000.0f;
+	torqueTarget.x = pdpiRoll.updateCtrl(dt, controlRoll, roll_H, rates.x) / 1000.0f;
+	torqueTarget.y = pdpiPitch.updateCtrl(dt, controlPitch, pitch_H, rates.y) / 1000.0f;
+
+if (rollAbs > ROLL_LIMIT || rollRateAbs > ROLLRATE_LIMIT) {
+    // giảm bớt mô-men khi trạng thái đã quá “căng”
+    torqueTarget.x *= 0.3f;   // hoặc 0.2, tuỳ bạn
+}
+
+	torqueTarget.x = constrain(torqueTarget.x, -MAX_TORQUE, MAX_TORQUE);
+	torqueTarget.y = constrain(torqueTarget.y, -MAX_TORQUE, MAX_TORQUE);
+	float du = torqueTarget.x - torquePrevX;
+	float maxDu = maxTorqueRate * dt;
+	du = constrain(du, -maxDu, maxDu);
+	torqueTarget.x = torquePrevX + du;
+	torquePrevX = torqueTarget.x;
+
 	float yawRateSp = -controlYaw * YAWRATE_MAX;
 	torqueTarget.z = yawRatePID.update(yawRateSp - rates.z);
 }
